@@ -3,6 +3,7 @@ import { logout, isTokenExpired } from './auth';
 
 const api = axios.create({
   baseURL: 'http://localhost:3000/api',
+  withCredentials: true,
 });
 
 let isRefreshing = false;
@@ -15,43 +16,7 @@ const processFailedRequests = (token) => {
 
 api.interceptors.request.use(
   async (config) => {
-    const token = localStorage.getItem('accessToken');
-    
-    if (token) {
-      // Preemptive check for expired token
-      if (isTokenExpired(token) && !config._retry) {
-        if (!isRefreshing) {
-          try {
-            isRefreshing = true;
-            const refreshToken = localStorage.getItem('refreshToken');
-            const response = await axios.post(
-              'http://localhost:3000/api/auth-service/user/refresh-token',
-              { refreshToken }
-            );
-            
-            localStorage.setItem('accessToken', response.data.accessToken);
-            localStorage.setItem('refreshToken', response.data.refreshToken);
-            config.headers.Authorization = `Bearer ${response.data.accessToken}`;
-            isRefreshing = false;
-            processFailedRequests(response.data.accessToken);
-          } catch (error) {
-            isRefreshing = false;
-            logout();
-            return Promise.reject(error);
-          }
-        } else {
-          return new Promise((resolve) => {
-            failedRequests.push({ resolve });
-          }).then((newToken) => {
-            config.headers.Authorization = `Bearer ${newToken}`;
-            return config;
-          });
-        }
-      }
-      
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    
+    // Cookie-based: no Authorization header; cookies sent automatically
     return config;
   },
   (error) => Promise.reject(error)
@@ -62,8 +27,13 @@ api.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401 && !error.config._retry) {
       error.config._retry = true;
-      // The request interceptor will handle the refresh
-      return api(error.config);
+      // Attempt refresh using cookie-based endpoint
+      try {
+        await axios.post('http://localhost:3000/api/auth-service/user/refresh-token', null, { withCredentials: true });
+        return api(error.config);
+      } catch (e) {
+        logout();
+      }
     }
     return Promise.reject(error);
   }

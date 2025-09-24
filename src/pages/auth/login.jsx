@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { jwtDecode } from 'jwt-decode';
@@ -43,14 +43,14 @@ const Login = () => {
     setError("");
 
     try {
-      const response = await axios.post(
+      await axios.post(
         "http://localhost:3000/api/auth-service/user/signin/customer",
-        formData
+        formData,
+        { withCredentials: true }
       );
-      localStorage.setItem("accessToken", response.data.accessToken);
-      localStorage.setItem("refreshToken", response.data.refreshToken);
-      const decodedToken = jwtDecode(response.data.accessToken);
-      const userRole = decodedToken.role;
+      // Optionally call verify to get role from server since token is HttpOnly
+      const verifyRes = await axios.get("http://localhost:3000/api/auth-service/user/verify-token", { withCredentials: true });
+      const userRole = verifyRes.data.role;
       localStorage.setItem("role", userRole);
 
       toast.success("Login successful!", { autoClose: 2000 });
@@ -78,6 +78,73 @@ const Login = () => {
       setLoading(false);
     }
   };
+
+  // Google Sign-In
+  const handleGoogleCredentialResponse = async (response) => {
+    try {
+      const credential = response?.credential;
+      if (!credential) {
+        toast.error("Google sign-in failed: no credential");
+        return;
+      }
+
+      await axios.post(
+        "http://localhost:3000/api/auth-service/user/oauth/google",
+        { credential },
+        { withCredentials: true }
+      );
+      const verifyRes = await axios.get("http://localhost:3000/api/auth-service/user/verify-token", { withCredentials: true });
+      const userRole = verifyRes.data.role;
+      localStorage.setItem("role", userRole);
+
+      toast.success("Logged in with Google!", { autoClose: 2000 });
+
+      switch (userRole) {
+        case "customer":
+          navigate("/");
+          break;
+        case "restaurant-admin":
+          navigate("/admin");
+          break;
+        case "delivery":
+          navigate("/delivery-rider");
+          break;
+        default:
+          navigate("/");
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Google login failed.");
+      console.error("Google login error:", err);
+    }
+  };
+
+  useEffect(() => {
+    // Initialize Google Identity Services button
+    const init = () => {
+      if (!window.google?.accounts?.id) return;
+      window.google.accounts.id.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredentialResponse,
+      });
+      const container = document.getElementById("googleSignInDiv");
+      if (container) {
+        window.google.accounts.id.renderButton(container, {
+          theme: "outline",
+          size: "large",
+          text: "signin_with",
+          shape: "rectangular",
+        });
+      }
+    };
+
+    // If script already loaded
+    if (document.readyState === "complete") {
+      init();
+    } else {
+      window.addEventListener("load", init);
+      return () => window.removeEventListener("load", init);
+    }
+  }, []);
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-orange-50 to-gray-100">
@@ -191,6 +258,15 @@ const Login = () => {
             )}
           </button>
         </form>
+
+        <div className="mt-4">
+          <div className="flex items-center my-4">
+            <div className="flex-grow border-t border-gray-200" />
+            <span className="mx-3 text-gray-500 text-sm">or</span>
+            <div className="flex-grow border-t border-gray-200" />
+          </div>
+          <div id="googleSignInDiv" className="flex justify-center" />
+        </div>
 
         <div className="mt-6 text-center">
           <p className="text-sm text-gray-600">

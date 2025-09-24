@@ -5,14 +5,11 @@ import { toast } from 'react-toastify';
 import axios from 'axios';
 
 export const isAuthenticated = () => {
+  // With HttpOnly cookies, we can't read tokens directly.
+  // A lightweight approach: check a small ping to auth verify (cached) or rely on route guards that call the API.
   const token = localStorage.getItem('accessToken');
   if (!token) return false;
-  
-  try {
-    return !isTokenExpired(token);
-  } catch {
-    return false;
-  }
+  try { return !isTokenExpired(token); } catch { return false; }
 };
 
 export const isTokenExpired = (token) => {
@@ -43,13 +40,8 @@ export const logout = () => {
 };
 export const signOut = async () => {
   try {
-    const refreshToken = localStorage.getItem('refreshToken');
-
-    const response = await axios.post('http://localhost:5001/user/signout', null, {
-      headers: {
-        Authorization: `Bearer ${refreshToken}`,
-      },
-    });
+    // Call via API gateway; cookies will be sent automatically with withCredentials
+    await axios.post('http://localhost:3000/api/auth-service/user/signout', null, { withCredentials: true });
 
     toast.info('Signed out successfully.', {
       position: "top-center",
